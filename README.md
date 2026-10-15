@@ -21,7 +21,7 @@ trained model, or train your own.
 Windows may warn that the app is from an unknown publisher, because it isn't code-signed.
 Click **More info → Run anyway**.
 
-The app keeps its models and settings in `%LOCALAPPDATA%8 AI`.
+The app keeps its models and settings in `%LOCALAPPDATA% 2048 AI`.
 
 ## Run from source
 
