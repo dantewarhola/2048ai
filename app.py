@@ -346,18 +346,27 @@ class BoardView(tk.Canvas):
                     digits = len(str(v))
                     scale = {1: 0.45, 2: 0.42, 3: 0.36, 4: 0.28}.get(digits, 0.22)
                     self.create_text(x + cell / 2, y + cell / 2, text=str(v), fill=fg,
-                                     font=("Segoe UI Black", max(8, int(cell * scale * 0.75))))
+                                     font=("Segoe UI Black", -max(11, int(cell * scale))))
         if not self.board:
             # A frosted panel over the empty grid, like the game's own overlays.
+            # The panel is sized to the text, which wraps on a small board.
             title, detail = self.placeholder
-            w, h = size * 0.74, size * (0.26 if detail else 0.17)
-            x0, y0 = ox + (size - w) / 2, (size - h) / 2
-            round_rect(self, x0, y0, x0 + w, y0 + h, px(10), fill="#f9f6f2", outline="")
-            cy = size / 2 - (px(9) if detail else 0)
-            self.create_text(ox + size / 2, cy, text=title, fill="#776e65", font=FONT_H2)
+            pad = px(12)
+            w = size * 0.84
+            cx, wrap = ox + size / 2, w - 2 * pad
+            items = [self.create_text(cx, 0, text=title, fill="#776e65", font=FONT_H2, width=wrap,
+                                      justify="center", anchor="n")]
             if detail:
-                self.create_text(ox + size / 2, cy + px(22), text=detail, fill="#9a8f84", font=FONT_SMALL,
-                                 width=w - px(20), justify="center")
+                top = self.bbox(items[0])[3] + px(4)
+                items.append(self.create_text(cx, top, text=detail, fill="#9a8f84", font=FONT_SMALL,
+                                              width=wrap, justify="center", anchor="n"))
+            text_h = self.bbox(*items)[3] - self.bbox(*items)[1]
+            y0 = (size - text_h) / 2 - pad
+            for item in items:
+                self.move(item, 0, y0 + pad)
+            panel = round_rect(self, cx - w / 2, y0, cx + w / 2, y0 + text_h + 2 * pad, px(10),
+                               fill="#f9f6f2", outline="")
+            self.tag_lower(panel, items[0])
 
 
 class Stepper(tk.Frame):
@@ -413,7 +422,7 @@ def logo(parent, bg, size=44):
     c = tk.Canvas(parent, width=size, height=size, bg=bg, highlightthickness=0)
     round_rect(c, 1, 1, size - 1, size - 1, size * 0.14, fill=GOLD, outline="")
     c.create_text(size / 2, size / 2, text="2048", fill="#f9f6f2",
-                  font=("Segoe UI Black", int(size * 0.22)))
+                  font=("Segoe UI Black", -int(size * 0.29)))
     return c
 
 
@@ -443,7 +452,8 @@ class Page(tk.Frame):
         titles.pack(side="left", fill="x", expand=True)
         tk.Label(titles, text=self.title, font=FONT_H1, bg=BG, fg=TEXT, anchor="w").pack(fill="x")
         if self.subtitle:
-            tk.Label(titles, text=self.subtitle, font=FONT, bg=BG, fg=TEXT_2, anchor="w").pack(fill="x", pady=(2, 0))
+            WrapLabel(titles, text=self.subtitle, font=FONT, bg=BG, fg=TEXT_2, anchor="w", justify="left"
+                      ).pack(fill="x", pady=(2, 0))
         self.body = tk.Frame(self, bg=BG)
         self.body.pack(fill="both", expand=True, padx=px(32), pady=(0, px(24)))
 
@@ -487,8 +497,8 @@ class HomePage(Page):
         self.model_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         self.model_name = tk.Label(self.model_card, font=FONT_BIG, bg=PANEL, fg=TEXT, anchor="w")
         self.model_name.pack(fill="x", pady=(4, 0))
-        self.model_lines = tk.Label(self.model_card, font=FONT, bg=PANEL, fg=MUTED, anchor="w",
-                                    justify="left")
+        self.model_lines = WrapLabel(self.model_card, font=FONT, bg=PANEL, fg=MUTED, anchor="w",
+                                     justify="left")
         self.model_lines.pack(fill="x", pady=(2, 10))
         btns = tk.Frame(self.model_card, bg=PANEL)
         btns.pack(fill="x")
@@ -557,8 +567,9 @@ class HomePage(Page):
             row = tk.Frame(self.check_frame, bg=PANEL)
             row.pack(fill="x", pady=2)
             tk.Label(row, text="✓" if ok else "!", width=2, font=FONT_BOLD, bg=PANEL,
-                     fg=GOOD if ok else BAD).pack(side="left")
-            tk.Label(row, text=text, font=FONT, bg=PANEL, fg=TEXT, anchor="w").pack(side="left")
+                     fg=GOOD if ok else BAD).pack(side="left", anchor="n")
+            WrapLabel(row, text=text, font=FONT, bg=PANEL, fg=TEXT, anchor="w", justify="left"
+                      ).pack(side="left", fill="x", expand=True)
 
     def download(self):
         self.app.pages["models"].download_pretrained()
@@ -911,8 +922,9 @@ class TrainPage(Page):
         self.body.columnconfigure(1, weight=1)
         self.body.rowconfigure(0, weight=1)
 
-        left = tk.Frame(self.body, bg=BG)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
+        scroll = theme.ScrollColumn(self.body, width=px(380))
+        scroll.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
+        left = scroll.inner
 
         opts = Card(left, "Training")
         opts.pack(fill="x")
@@ -980,23 +992,21 @@ class TrainPage(Page):
         head.pack(fill="x")
         self.state_label = tk.Label(head, font=FONT_BOLD, bg=PANEL, fg=MUTED, anchor="w")
         self.state_label.pack(side="left")
-        self.games_label = tk.Label(live, font=FONT_BIG, bg=PANEL, fg=TEXT, anchor="w")
-        self.games_label.pack(fill="x", pady=(4, 0))
+        # The count in big type with its caption beside it, so it fits a narrow column.
+        count = tk.Frame(live, bg=PANEL)
+        count.pack(fill="x", pady=(4, 0))
+        self.games_label = tk.Label(count, font=FONT_BIG, bg=PANEL, fg=TEXT, anchor="w")
+        self.games_label.pack(side="left")
+        self.games_caption = tk.Label(count, text="games trained", font=FONT, bg=PANEL, fg=TEXT_2, anchor="w")
+        self.games_caption.pack(side="left", anchor="s", padx=(px(8), 0), pady=(0, px(6)))
         self.progress = theme.ProgressBar(live, maximum=1000)
         self.progress.pack(fill="x", pady=(6, 2))
-        self.progress_text = tk.Label(live, font=FONT_SMALL, bg=PANEL, fg=MUTED, anchor="w")
+        self.progress_text = WrapLabel(live, font=FONT_SMALL, bg=PANEL, fg=MUTED, anchor="w", justify="left")
         self.progress_text.pack(fill="x")
-        nums = tk.Frame(live, bg=PANEL)
-        nums.pack(fill="x", pady=(10, 0))
-        self.num = {}
-        for i, name in enumerate(("Avg score", "Reaches 2048", "Reaches 4096", "Best tile", "Games / s")):
-            nums.columnconfigure(i, weight=1)
-            tk.Label(nums, text=name, font=FONT_SMALL, bg=PANEL, fg=MUTED, anchor="w").grid(row=0, column=i, sticky="w")
-            lab = tk.Label(nums, text="-", font=("Segoe UI Semibold", 16), bg=PANEL, fg=TEXT, anchor="w")
-            lab.grid(row=1, column=i, sticky="w")
-            self.num[name] = lab
+        self.num = theme.StatGrid(live, ("Avg score", "Reaches 2048", "Reaches 4096", "Best tile", "Games / s"))
+        self.num.pack(fill="x", pady=(10, 0))
         WrapLabel(live, text="Numbers cover the most recent training games (played without search). "
-                             "Full charts are on the Stats page.", font=FONT_SMALL, bg=PANEL, fg=MUTED,
+                             "Totals for all training and charts are on the Stats page.", font=FONT_SMALL, bg=PANEL, fg=MUTED,
                   anchor="w", justify="left").pack(fill="x", pady=(8, 0))
 
         self.log = LogView(right, height=10, title="Training output")
@@ -1135,11 +1145,12 @@ class TrainPage(Page):
         if s is None:
             self.state_label.config(text="● Training" if mine else "Not trained yet",
                                     fg=GOOD if mine else MUTED)
-            self.games_label.config(text="Starting..." if mine else "0 games trained")
+            self.games_label.config(text="Starting..." if mine else "0")
+            self.games_caption.config(text="" if mine else "games trained")
             self.progress.config(value=0)
             self.progress_text.config(text="")
-            for lab in self.num.values():
-                lab.config(text="-")
+            for name in self.num.values:
+                self.num.set(name, "-")
         else:
             fresh = time.time() - s.get("updated", 0) < 15
             active = s.get("status") in ("training", "saving") and fresh
@@ -1151,7 +1162,8 @@ class TrainPage(Page):
                 self.state_label.config(text="● Starting...", fg=GOOD)
             else:
                 self.state_label.config(text=f"■ Stopped {fmt_ago(s.get('updated'))}", fg=MUTED)
-            self.games_label.config(text=f"{s.get('games_trained', 0):,} games trained")
+            self.games_label.config(text=f"{s.get('games_trained', 0):,}")
+            self.games_caption.config(text="games trained")
             run, target = s.get("games_this_run", 0), s.get("target_games")
             rate = s.get("games_per_sec", 0.0)
             if target and active:
@@ -1163,11 +1175,11 @@ class TrainPage(Page):
                 self.progress_text.config(text=f"This run: {run:,} games  ·  {format_duration(s.get('elapsed', 0))}"
                                           if active else "")
             table = {r["tile"]: r["rate"] for r in s.get("tiles", [])}
-            self.num["Avg score"].config(text=f"{s.get('avg_score', 0):,.0f}")
-            self.num["Reaches 2048"].config(text=f"{100 * table.get(2048, 0):.0f}%" if table else "-")
-            self.num["Reaches 4096"].config(text=f"{100 * table.get(4096, 0):.0f}%" if table else "-")
-            self.num["Best tile"].config(text=f"{s.get('best_tile_ever', 0):,}")
-            self.num["Games / s"].config(text=f"{rate:.1f}" if active else "-")
+            self.num.set("Avg score", f"{s.get('avg_score', 0):,.0f}")
+            self.num.set("Reaches 2048", f"{100 * table.get(2048, 0):.0f}%" if table else "-")
+            self.num.set("Reaches 4096", f"{100 * table.get(4096, 0):.0f}%" if table else "-")
+            self.num.set("Best tile", f"{s.get('best_tile_ever', 0):,}")
+            self.num.set("Games / s", f"{rate:.1f}" if active else "-")
         self.after(1000, self.tick)
 
 
@@ -1187,18 +1199,19 @@ class ModelsPage(Page):
         cols = ("name", "games", "score", "size", "modified")
         self.tree = ttk.Treeview(left, columns=cols, show="headings", selectmode="browse",
                                  style="Models.Treeview")
-        for col, text, width, anchor in (("name", "Model", 190, "w"), ("games", "Games trained", 100, "e"),
-                                         ("score", "Eval avg score", 100, "e"), ("size", "Size", 75, "e"),
-                                         ("modified", "Last changed", 110, "e")):
+        for col, text, anchor in (("name", "Model", "w"), ("games", "Games", "e"), ("score", "Eval score", "e"),
+                                  ("size", "Size", "e"), ("modified", "Changed", "e")):
             self.tree.heading(col, text=text, anchor=anchor)
-            self.tree.column(col, width=px(width), anchor=anchor, stretch=col == "name")
+            self.tree.column(col, anchor=anchor, stretch=False, width=px(self.COLUMN_WIDTHS.get(col, 130)))
         self.tree.tag_configure("active", font=FONT_BOLD)
         self.tree.pack(fill="both", expand=True)
+        self.tree.bind("<Configure>", lambda e: self.fit_columns(e.width))
         self.tree.bind("<<TreeviewSelect>>", lambda e: self.show_details())
         self.tree.bind("<Double-1>", lambda e: self.use_selected())
 
-        right = tk.Frame(self.body, bg=BG)
-        right.grid(row=0, column=1, sticky="nsew")
+        scroll = theme.ScrollColumn(self.body, width=px(330))
+        scroll.grid(row=0, column=1, sticky="nsew")
+        right = scroll.inner
         self.details = Card(right, "Details")
         self.details.pack(fill="x")
         self.detail_text = WrapLabel(self.details, font=FONT, bg=PANEL, fg=TEXT, anchor="w", justify="left",
@@ -1235,6 +1248,21 @@ class ModelsPage(Page):
 
     # ---- list
 
+    COLUMN_WIDTHS = {"games": 90, "score": 90, "size": 80, "modified": 104}
+    name_width = 0
+
+    def fit_columns(self, width):
+        """Give the name column what's left, shrinking the others if the list is narrow."""
+        natural = {col: px(w) for col, w in self.COLUMN_WIDTHS.items()}
+        name = max(self.name_width, width - sum(natural.values()))
+        scale = min(1.0, (width - name) / sum(natural.values()))
+        used = 0
+        for col, w in natural.items():
+            w = max(px(40), int(w * scale))
+            self.tree.column(col, width=w)
+            used += w
+        self.tree.column("name", width=max(px(60), width - used))
+
     def on_show(self):
         self.refresh()
 
@@ -1244,17 +1272,21 @@ class ModelsPage(Page):
     def refresh(self):
         selected = self.selected()
         self.tree.delete(*self.tree.get_children())
+        bold = theme.tkfont.Font(font=FONT_BOLD)
+        self.name_width = px(90)
         for path in find_models(self.app.settings["new_models"] + [self.app.model]):
             exists = os.path.exists(path)
             info = model_info(path) if exists else {}
             ev = read_json(eval_path(path)) if exists else None
-            name = model_name(path) + ("   ✓ in use" if path == self.app.model else "")
+            name = model_name(path) + ("  ✓" if path == self.app.model else "")
             values = (name, f"{games_trained(path):,}" if exists else "new",
                       f"{ev['avg_score']:,.0f}" if ev else "-",
                       fmt_size(os.path.getsize(path)) if exists else "-",
-                      time.strftime("%b %d, %H:%M", time.localtime(os.path.getmtime(path))) if exists else "-")
+                      time.strftime("%b %d %H:%M", time.localtime(os.path.getmtime(path))) if exists else "-")
             self.tree.insert("", "end", iid=path, values=values,
                              tags=("active",) if path == self.app.model else ())
+            self.name_width = max(self.name_width, bold.measure(name) + px(16))
+        self.fit_columns(self.tree.winfo_width())
         target = selected if selected and self.tree.exists(selected) else self.app.model
         if self.tree.exists(target):
             self.tree.selection_set(target)
@@ -1500,7 +1532,7 @@ class ModelsPage(Page):
 
 class StatsPage(Page):
     title = "Stats"
-    subtitle = "Live training progress and the latest evaluation for the active model."
+    subtitle = "Results across all of the active model's training, live while it trains, and its latest evaluation."
 
     def __init__(self, app):
         super().__init__(app)

@@ -388,6 +388,43 @@ def reliable_tile(table, level=0.95):
     return best
 
 
+def new_totals():
+    """Running totals over every training game of a network, across all runs.
+
+    "tiles" counts games that reached each tile. Games trained before totals
+    were kept are estimated from the chart history ("estimated" of "games");
+    moves and training time are only known for games counted since.
+    """
+    return {"games": 0, "estimated": 0, "score_sum": 0.0, "tiles": {str(t): 0 for t in STAT_TILES},
+            "moves_games": 0, "moves_sum": 0, "seconds": 0.0, "runs": 0}
+
+
+def totals_from_history(old):
+    """Estimate totals for a network trained before they were kept, from its stats file.
+
+    Each history point is the average of the `window` games before it; the
+    games between two points are counted at the later point's averages.
+    """
+    totals = new_totals()
+    history = old.get("history") or []
+    points = history + [{"games": old.get("games_trained", 0), "avg_score": old.get("avg_score", 0.0),
+                         "rates": {str(r["tile"]): r["rate"] for r in old.get("tiles") or []}}]
+    prev = max(0, history[0]["games"] - old.get("window", 1000)) if history else points[-1]["games"]
+    tiles = dict.fromkeys(totals["tiles"], 0.0)
+    for p in points:
+        n = p["games"] - prev
+        if n <= 0 or not p.get("rates"):
+            continue
+        totals["score_sum"] += n * p["avg_score"]
+        for t in tiles:
+            tiles[t] += n * p["rates"].get(t, 0.0)
+        totals["games"] += n
+        prev = p["games"]
+    totals["estimated"] = totals["games"]
+    totals["tiles"] = {t: round(v) for t, v in tiles.items()}
+    return totals
+
+
 def format_duration(seconds):
     seconds = int(seconds)
     h, rem = divmod(seconds, 3600)
@@ -488,12 +525,21 @@ def train(args):
     history = old.get("history", []) if games_trained else []
     best_score_ever = old.get("best_score_ever", 0) if games_trained else 0
     best_tile_ever = old.get("best_tile_ever", 0) if games_trained else 0
+    # Totals over all of this network's training, kept in the stats file and in
+    # the info file (so an exported model takes them along).
+    if not games_trained:
+        totals = new_totals()
+    else:
+        totals = old.get("totals") or info.get("totals") or totals_from_history(old)
+    totals["runs"] += 1
+    seconds_before = totals["seconds"]
     rate_samples = deque()  # (time, games finished) for the recent games/s rate
 
     def save():
         nonlocal last_save_wall
+        totals["seconds"] = seconds_before + time.perf_counter() - start
         info.update(games_trained=games_trained, alpha=args.alpha, tuples=TUPLES,
-                    corner=args.corner)
+                    corner=args.corner, totals=totals)
         agent.save(args.weights, info)
         last_save_wall = time.time()
 
@@ -508,6 +554,7 @@ def train(args):
         dist = {}
         for t in recent_tiles:
             dist[str(t)] = dist.get(str(t), 0) + 1
+        totals["seconds"] = seconds_before + now - start
         write_json(stats_path(args.weights), {
             "status": status,
             "updated": time.time(),
@@ -529,6 +576,7 @@ def train(args):
             "reliable_tile": reliable_tile(table) if table else None,
             "tile_distribution": dist,
             "last_save": last_save_wall,
+            "totals": totals,
             "history": history,
         })
 
@@ -556,6 +604,13 @@ def train(args):
                 recent_moves.extend(env.moves[over].tolist())
                 best_score_ever = max(best_score_ever, max(scores))
                 best_tile_ever = max(best_tile_ever, max(tiles))
+                game_moves = env.moves[over]
+                totals["games"] += len(scores)
+                totals["score_sum"] += sum(scores)
+                totals["moves_games"] += len(scores)
+                totals["moves_sum"] += int(game_moves.sum())
+                for t in STAT_TILES:
+                    totals["tiles"][str(t)] += sum(1 for m in tiles if m >= t)
                 finished += int(over.sum())
                 games_trained += int(over.sum())
 
