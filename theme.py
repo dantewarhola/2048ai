@@ -567,6 +567,38 @@ class ScrollColumn(tk.Frame):
             self.canvas.yview_scroll(int(-event.delta / 120) or (-1 if event.delta > 0 else 1), "units")
 
 
+class StatGrid(tk.Frame):
+    """Labeled numbers side by side, wrapping onto more rows when there isn't room."""
+
+    def __init__(self, parent, names, cell_width=110, value_font=("Segoe UI Semibold", 16)):
+        bg = bg_of(parent)
+        super().__init__(parent, bg=bg)
+        self.cell_width = cell_width
+        self.cells, self.values, self.cols = [], {}, None
+        for name in names:
+            cell = tk.Frame(self, bg=bg)
+            tk.Label(cell, text=name, font=FONT_SMALL, bg=bg, fg=MUTED, anchor="w").pack(fill="x")
+            value = tk.Label(cell, text="-", font=value_font, bg=bg, fg=TEXT, anchor="w")
+            value.pack(fill="x")
+            self.cells.append(cell)
+            self.values[name] = value
+        self._layout(2)  # start narrow, so it never asks for more width than it gets
+        self.bind("<Configure>", lambda e: self._layout(max(1, e.width // px(self.cell_width))))
+
+    def _layout(self, cols):
+        cols = min(cols, len(self.cells))
+        if cols == self.cols:
+            return
+        self.cols = cols
+        for i, cell in enumerate(self.cells):
+            cell.grid(row=i // cols, column=i % cols, sticky="ew", pady=(0 if i < cols else px(8), 0))
+        for c in range(len(self.cells)):
+            self.columnconfigure(c, weight=1 if c < cols else 0, uniform="stat" if c < cols else "")
+
+    def set(self, name, text):
+        self.values[name].config(text=text)
+
+
 def field(parent, label, hint=None):
     """A labeled row inside a card; returns the frame to put the control in."""
     bg = bg_of(parent)
