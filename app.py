@@ -52,7 +52,7 @@ SETTINGS_FILE = os.path.join(HERE, "app_settings.json")
 GAME_URL = "https://2048.org/"
 # A compact pretrained model (.npz, made with Models > Export) to offer new
 # users, e.g. a GitHub release asset. Leave empty to hide the download button.
-PRETRAINED_URL = "https://github.com/dantewarhola/2048ai/releases/download/v1.0.0/agent_weights.npz"
+PRETRAINED_URL = "https://github.com/dantewarhola/2048ai/releases/download/v1.2.0/fromscratch.npz"
 IS_WINDOWS = sys.platform == "win32"
 
 # ---------------------------------------------------------------- look
