@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+
+# Trained models are far too big for git (~270 MB each). Share them as a
+# compact export (Models > Export for sharing) attached to a GitHub release.
+*.npy
+*.npz
+models/
+agent_weights*.json
+
+# Local app state
+app_settings.json
+*.tmp
+
+# Built app (python build.py); attach dist/2048 AI.exe to a GitHub release
+build/
+dist/
+build.py
+run.bat
